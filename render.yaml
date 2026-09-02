@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: alnoor-whatsapp-bot
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+      - key: AUTOSTART_BOT
+        value: "false"
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
