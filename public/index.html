@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Al-Noor Real Estate — Control</title>
+<style>
+  :root{
+    color-scheme: light;
+    --ink:#14232b;
+    --ink-soft:#4a5f69;
+    --ink-faint:#7d8f97;
+    --page:#e7ece8;
+    --surface:#fcfdfc;
+    --surface-2:#f1f5f2;
+    --line:#d2dbd5;
+    --green:#1f6f5c;
+    --green-dark:#175647;
+    --flash:#e3a008;
+    --brick:#8e2f2f;
+    --radius:10px;
+    --shadow:0 1px 2px rgba(20,35,43,.06), 0 8px 24px -18px rgba(20,35,43,.5);
+    --display:Georgia,"Iowan Old Style","Times New Roman",serif;
+    --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--page); color:var(--ink); font-family:var(--body);
+    font-size:14.5px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:var(--display); font-weight:600; letter-spacing:-.01em; margin:0}
+  h1{font-size:20px}
+  h2{font-size:17px}
+  h3{font-size:14px; font-family:var(--body); font-weight:650; letter-spacing:.02em; text-transform:uppercase; color:var(--ink-soft); font-size:11.5px}
+  a{color:var(--green)}
+  button{font-family:inherit; font-size:13.5px; cursor:pointer}
+  input,select,textarea{font-family:inherit; font-size:13.5px; color:var(--ink)}
+  code,.mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  /* ---- signature element: the wire ------------------------------- */
+  .wire{
+    position:sticky; top:0; z-index:40;
+    background:var(--ink); color:#e8efea;
+    border-bottom:2px solid var(--flash);
+  }
+  .wire-row{
+    max-width:1180px; margin:0 auto; padding:10px 20px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  .wire-brand{font-family:var(--display); font-size:15px; letter-spacing:.01em}
+  .wire-brand small{display:block; font-family:var(--body); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:#8fa8a0}
+  .wire-state{display:flex; align-items:center; gap:8px; margin-left:auto; font-size:12.5px}
+  .dot{width:9px; height:9px; border-radius:50%; background:var(--ink-faint); flex:none}
+  .dot.live{background:#5fd0a3; box-shadow:0 0 0 0 rgba(95,208,163,.7); animation:pulse 2.4s infinite}
+  .dot.warn{background:var(--flash)}
+  .dot.bad{background:#e0736b}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(95,208,163,.6)}
+    70%{box-shadow:0 0 0 9px rgba(95,208,163,0)}
+    100%{box-shadow:0 0 0 0 rgba(95,208,163,0)}
+  }
+  @media (prefers-reduced-motion:reduce){ .dot.live{animation:none} }
+  .wire-qr{
+    max-width:1180px; margin:0 auto; padding:0 20px 16px;
+    display:none; gap:18px; align-items:center; flex-wrap:wrap;
+  }
+  .wire-qr.show{display:flex}
+  .wire-qr img{width:190px; height:190px; background:#fff; padding:8px; border-radius:8px}
+  .wire-qr p{margin:.2em 0; font-size:13px; color:#c3d3cc; max-width:36ch}
+
+  /* ---- layout ---------------------------------------------------- */
+  .shell{max-width:1180px; margin:0 auto; padding:22px 20px 60px; display:flex; gap:24px; align-items:flex-start}
+  nav{width:186px; flex:none; position:sticky; top:74px}
+  nav button{
+    display:block; width:100%; text-align:left; background:none; border:0;
+    padding:8px 11px; border-radius:8px; color:var(--ink-soft); margin-bottom:2px;
+  }
+  nav button:hover{background:rgba(20,35,43,.05); color:var(--ink)}
+  nav button[aria-current="true"]{background:var(--ink); color:#fff}
+  nav .navlabel{padding:14px 11px 6px}
+  main{flex:1; min-width:0}
+  .view{display:none; animation:fade .16s ease-out}
+  .view.active{display:block}
+  @keyframes fade{from{opacity:0; transform:translateY(3px)} to{opacity:1; transform:none}}
+  @media (prefers-reduced-motion:reduce){ .view{animation:none} }
+  @media (max-width:820px){
+    .shell{flex-direction:column; padding:14px}
+    nav{width:100%; position:static; display:flex; gap:6px; overflow-x:auto; padding-bottom:6px}
+    nav button{width:auto; white-space:nowrap}
+    nav .navlabel{display:none}
+  }
+
+  /* ---- primitives ------------------------------------------------ */
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+  .card+.card{margin-top:16px}
+  .card-head{padding:14px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .card-head h2{margin-right:auto}
+  .card-body{padding:16px}
+  .viewhead{display:flex; align-items:flex-end; gap:12px; margin-bottom:14px; flex-wrap:wrap}
+  .viewhead p{margin:0; color:var(--ink-soft); font-size:13px}
+  .btn{
+    border:1px solid var(--line); background:var(--surface); color:var(--ink);
+    padding:7px 13px; border-radius:8px;
+  }
+  .btn:hover{border-color:var(--ink-faint)}
+  .btn.primary{background:var(--green); border-color:var(--green); color:#fff}
+  .btn.primary:hover{background:#1a5f50}
+  .btn.ghost{border-color:transparent; background:transparent; color:var(--ink-soft)}
+  .btn.danger{color:var(--brick); border-color:#e3cfcf}
+  .btn.small{padding:4px 9px; font-size:12.5px}
+  .btn:disabled{opacity:.5; cursor:not-allowed}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .grid{display:grid; gap:14px}
+  .field{display:block; margin-bottom:12px}
+  .field>span{display:block; font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:4px}
+  .field>em{display:block; font-style:normal; font-size:11.5px; color:var(--ink-faint); margin-top:3px}
+  input[type=text],input[type=number],input[type=password],select,textarea{
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff;
+  }
+  textarea{min-height:78px; resize:vertical; line-height:1.45}
+  input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--green); outline-offset:1px}
+  .check{display:flex; align-items:flex-start; gap:9px; margin-bottom:9px; font-size:13.5px}
+  .check input{margin-top:3px}
+  table{width:100%; border-collapse:collapse}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; font-size:13px}
+  th{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); font-weight:650; background:var(--surface-2)}
+  tbody tr:hover{background:var(--surface-2)}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block; font-size:11px; font-weight:650; padding:2px 8px; border-radius:20px; white-space:nowrap}
+  .tag.visit_request{background:#dfeee7; color:#155e46}
+  .tag.sell_lead{background:#fbeed3; color:#7a5406}
+  .tag.agent_request{background:#f6dede; color:#7d2727}
+  .tag.manual_reply{background:#e2e8ec; color:#3d5561}
+  .tag.current{background:#dfeee7; color:#155e46}
+  .tag.sold{background:#e6e9e7; color:#4a5f69}
+  .tag.archived{background:#efe3d6; color:#7a5406}
+  .muted{color:var(--ink-faint)}
+  .empty{padding:26px 16px; text-align:center; color:var(--ink-faint); font-size:13px}
+  .empty strong{display:block; color:var(--ink-soft); font-family:var(--display); font-size:15px; margin-bottom:4px}
+
+  /* ---- overview -------------------------------------------------- */
+  .tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:12px}
+  .tile{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:13px 14px}
+  .tile .n{font-family:var(--display); font-size:26px; line-height:1.1; font-variant-numeric:tabular-nums}
+  .tile .l{font-size:11.5px; color:var(--ink-soft); margin-top:2px}
+  .tile.accent{border-left:3px solid var(--green)}
+  .chart{display:flex; align-items:flex-end; gap:5px; height:112px; padding-top:8px}
+  .bar{flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:2px; min-width:0}
+  .bar i{display:block; border-radius:2px 2px 0 0; background:var(--green); min-height:1px}
+  .bar i.out{background:#b9cfc6}
+  .bar span{font-size:9.5px; color:var(--ink-faint); text-align:center; white-space:nowrap; overflow:hidden}
+  .legend{display:flex; gap:14px; font-size:11.5px; color:var(--ink-soft); margin-top:8px}
+  .legend b{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px}
+  .warn{border-left:3px solid var(--flash); background:#fdf6e6; padding:9px 12px; border-radius:6px; font-size:13px; margin-bottom:8px}
+  .warn.info{border-left-color:var(--ink-faint); background:var(--surface-2)}
+
+  /* ---- listings -------------------------------------------------- */
+  .thumb{width:54px; height:40px; object-fit:cover; border-radius:5px; background:var(--surface-2); display:block}
+  .steps{counter-reset:step}
+  .step{border-top:1px solid var(--line); padding:16px 0}
+  .step:first-child{border-top:0; padding-top:0}
+  .step-head{display:flex; align-items:baseline; gap:10px; margin-bottom:12px}
+  .step-n{font-family:var(--mono); font-size:12px; color:var(--flash); font-weight:700}
+
+  /* ---- dialog / toast -------------------------------------------- */
+  dialog{border:0; padding:0; border-radius:12px; box-shadow:0 24px 60px -20px rgba(20,35,43,.5); max-width:620px; width:calc(100% - 28px)}
+  dialog::backdrop{background:rgba(20,35,43,.42)}
+  .dlg-head{padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center}
+  .dlg-body{padding:18px; max-height:66vh; overflow:auto}
+  .dlg-foot{padding:12px 18px; border-top:1px solid var(--line); display:flex; gap:9px; justify-content:flex-end; background:var(--surface-2); border-radius:0 0 12px 12px}
+  #toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:90; display:flex; flex-direction:column; gap:8px; align-items:center}
+  .toast{background:var(--ink); color:#fff; padding:9px 15px; border-radius:20px; font-size:13px; box-shadow:var(--shadow)}
+  .toast.bad{background:var(--brick)}
+  pre.logs{margin:0; font-family:var(--mono); font-size:11.5px; line-height:1.65; max-height:520px; overflow:auto; white-space:pre-wrap; word-break:break-word}
+  .logline.warn{color:#8a6100}
+  .logline.error{color:var(--brick)}
+  .logline.chat{color:var(--green)}
+  .logline .t{color:var(--ink-faint)}
+
+  /* ---- login ----------------------------------------------------- */
+  #login{position:fixed; inset:0; z-index:80; background:var(--ink); display:none; align-items:center; justify-content:center; padding:20px}
+  #login.show{display:flex}
+  #login .box{background:var(--surface); border-radius:14px; padding:26px; width:100%; max-width:340px}
+  #login h1{margin-bottom:4px}
+  #login p{margin:0 0 18px; font-size:13px; color:var(--ink-soft)}
+</style>
+</head>
+<body>
+
+<!-- the wire: always tells you whether the phone is actually connected -->
+<div class="wire">
+  <div class="wire-row">
+    <div class="wire-brand" id="brandName">Al-Noor Real Estate<small>control</small></div>
+    <div class="wire-state">
+      <span class="dot" id="stateDot"></span>
+      <span id="stateText">checking…</span>
+      <button class="btn small" id="wireAction" style="margin-left:6px">Connect</button>
+    </div>
+  </div>
+  <div class="wire-qr" id="wireQr">
+    <img id="qrImg" alt="WhatsApp QR code">
+    <div>
+      <p><strong>Scan to connect.</strong> On the agency phone: WhatsApp → Settings → Linked devices → Link a device.</p>
+      <p class="muted">The code refreshes every 20 seconds on its own. Keep this page open while scanning.</p>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <nav>
+    <div class="navlabel"><h3>Daily</h3></div>
+    <button data-view="overview" aria-current="true">Overview</button>
+    <button data-view="leads">Leads</button>
+    <div class="navlabel"><h3>Content</h3></div>
+    <button data-view="listings">Listings</button>
+    <button data-view="messages">Bot messages</button>
+    <div class="navlabel"><h3>System</h3></div>
+    <button data-view="settings">Settings</button>
+    <button data-view="connection">Connection</button>
+    <button data-view="logs">Activity log</button>
+    <div class="navlabel"><h3></h3></div>
+    <button id="signOut" class="ghost">Sign out</button>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section class="view active" id="view-overview">
+      <div class="viewhead">
+        <h1>Overview</h1>
+        <p id="overviewSub">—</p>
+        <button class="btn small" style="margin-left:auto" data-refresh="overview">Refresh</button>
+      </div>
+      <div id="warnings"></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><h2>Last 14 days</h2></div>
+        <div class="card-body">
+          <div class="chart" id="chart"></div>
+          <div class="legend">
+            <span><b style="background:var(--green)"></b>Messages received</span>
+            <span><b style="background:#b9cfc6"></b>Messages sent</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Latest activity</h2><a class="btn small" href="/api/leads.csv">Export all leads (CSV)</a></div>
+        <div id="recentWrap"></div>
+      </div>
+    </section>
+
+    <!-- LEADS -->
+    <section class="view" id="view-leads">
+      <div class="viewhead">
+        <h1>Leads</h1>
+        <p>One file per customer. Repeat inquiries stack up in the same row.</p>
+        <button class="btn small" style="margin-left:auto" data-refresh="leads">Refresh</button>
+      </div>
+      <div class="card"><div id="leadsWrap"></div></div>
+    </section>
+
+    <!-- LISTINGS -->
+    <section class="view" id="view-listings">
+      <div class="viewhead">
+        <h1>Listings</h1>
+        <p>What the bot shows buyers. Changes apply to the next message, no restart.</p>
+        <div class="row" style="margin-left:auto">
+          <select id="listingFilter" style="width:auto">
+            <option value="all">All</option>
+            <option value="current">For sale</option>
+            <option value="sold">Sold</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button class="btn small" id="importBtn">Import CSV</button>
+          <button class="btn primary small" id="newListingBtn">New listing</button>
+        </div>
+      </div>
+      <div class="card"><div id="listingsWrap"></div></div>
+    </section>
+
+    <!-- MESSAGES -->
+    <section class="view" id="view-messages">
+      <div class="viewhead">
+        <h1>Bot messages</h1>
+        <p>Every word the bot says, in the order a customer meets it.</p>
+        <div class="row" style="margin-left:auto">
+          <button class="btn small" id="resetTexts">Restore defaults</button>
+          <button class="btn primary small" id="saveTexts">Save messages</button>
+        </div>
+      </div>
+      <div class="card"><div class="card-body steps" id="textSteps"></div></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings">
+      <div class="viewhead">
+        <h1>Settings</h1>
+        <p>Agency details, lead notifications, behaviour and sending speed.</p>
+        <button class="btn primary small" style="margin-left:auto" id="saveSettings">Save settings</button>
+      </div>
+      <div id="settingsWrap"></div>
+    </section>
+
+    <!-- CONNECTION -->
+    <section class="view" id="view-connection">
+      <div class="viewhead"><h1>Connection</h1><p>Link the agency's WhatsApp number to the bot.</p></div>
+      <div class="card">
+        <div class="card-head"><h2>WhatsApp</h2><span id="connBadge" class="tag current">—</span></div>
+        <div class="card-body">
+          <div id="connDetail" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin-bottom:16px"></div>
+          <div class="row">
+            <button class="btn primary" id="btnConnect">Connect</button>
+            <button class="btn" id="btnStop">Stop bot</button>
+            <button class="btn danger" id="btnLogout">Log out &amp; forget device</button>
+          </div>
+          <p class="muted" style="font-size:12.5px; margin:12px 0 0">
+            Stop keeps the login and pauses the bot. Log out unlinks the device, so the next Connect needs a fresh QR scan.
+          </p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Session backup</h2></div>
+        <div class="card-body">
+          <p style="margin-top:0; font-size:13px; color:var(--ink-soft)">
+            Render wipes the disk on every deploy unless you attach a persistent disk. Download the session after you scan the
+            QR, then restore it after a deploy instead of scanning again.
+          </p>
+          <div class="row">
+            <a class="btn" href="/api/session/backup">Back up session</a>
+            <label class="btn" style="margin:0">Restore session<input type="file" id="restoreFile" accept="application/json" hidden></label>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Send a message yourself</h2></div>
+        <div class="card-body">
+          <label class="field"><span>To</span><input type="text" id="sendTo" placeholder="61412345678 or a chat id from Leads"></label>
+          <label class="field"><span>Message</span><textarea id="sendText" placeholder="Hi, this is James from Al-Noor…"></textarea></label>
+          <button class="btn primary" id="btnSend">Send message</button>
+          <p class="muted" style="font-size:12.5px">Goes through the same queue and delays as the bot, so it stays within your sending limits.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section class="view" id="view-logs">
+      <div class="viewhead">
+        <h1>Activity log</h1><p>What the bot did, newest at the bottom.</p>
+        <label class="row" style="margin-left:auto; font-size:12.5px"><input type="checkbox" id="autoLogs" checked> auto refresh</label>
+      </div>
+      <div class="card"><div class="card-body"><pre class="logs" id="logsWrap">loading…</pre></div></div>
+    </section>
+  </main>
+</div>
+
+<!-- listing editor -->
+<dialog id="listingDlg">
+  <form method="dialog" id="listingForm">
+    <div class="dlg-head"><h2 id="listingDlgTitle">New listing</h2></div>
+    <div class="dlg-body">
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <label class="field" style="grid-column:1/-1"><span>Headline</span><input type="text" name="title" required></label>
+        <label class="field" style="grid-column:1/-1"><span>Address</span><input type="text" name="address" required></label>
+        <label class="field"><span>Suburb</span><input type="text" name="suburb"></label>
+        <label class="field"><span>Status</span><select name="status"><option value="current">For sale</option><option value="sold">Sold</option></select></label>
+        <label class="field"><span>Price as shown to buyers</span><input type="text" name="priceDisplay" placeholder="$849,000 - $899,000"><em>Leave blank to fall back to the number below</em></label>
+        <label class="field"><span>Price for filtering</span><input type="number" name="priceNumeric" placeholder="849000"><em>Used when a buyer gives a budget</em></label>
+        <label class="field"><span>Bedrooms</span><input type="number" name="bedrooms"></label>
+        <label class="field"><span>Bathrooms</span><input type="number" name="bathrooms"></label>
+        <label class="field"><span>Car spaces</span><input type="number" name="parking"></label>
+        <label class="field"><span>Land size</span><input type="text" name="landSize" placeholder="575 m²"></label>
+        <label class="field" style="grid-column:1/-1"><span>Photo URL</span><input type="text" name="heroImageUrl" placeholder="https://…jpg"><em>Sent as the listing card image. Blank means a text-only card.</em></label>
+        <label class="field" style="grid-column:1/-1"><span>Description</span><textarea name="description"></textarea></label>
+        <label class="field"><span>Agent</span><input type="text" name="agent"></label>
+        <label class="field"><span>CRM reference</span><input type="text" name="refId"></label>
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" name="active" checked> <span>Show this listing to buyers</span></label>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" value="cancel" type="submit">Cancel</button>
+      <button class="btn primary" id="listingSave" type="button">Save listing</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- csv import -->
+<dialog id="importDlg">
+  <form method="dialog">
+    <div class="dlg-head"><h2>Import listings from CSV</h2></div>
+    <div class="dlg-body">
+      <p style="margin-top:0; font-size:13px; color:var(--ink-soft)">
+        Paste the CSV including its header row. Columns are matched by name — Address, Title, Suburb, Price, Beds, Baths,
+        Parking, Land size, Description, Image. Anything it can't match is reported back and skipped.
+      </p>
+      <label class="field"><span>Import as</span><select id="importStatus"><option value="current">For sale</option><option value="sold">Sold</option></select></label>
+      <label class="check"><input type="checkbox" id="importReplace"> <span>Replace the existing listings of that type instead of merging</span></label>
+      <label class="field"><span>CSV</span><textarea id="importCsv" style="min-height:180px; font-family:var(--mono); font-size:12px"></textarea></label>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn ghost" value="cancel" type="submit">Cancel</button>
+      <button class="btn primary" id="importRun" type="button">Import</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- lead detail -->
+<dialog id="leadDlg">
+  <form method="dialog">
+    <div class="dlg-head"><h2 id="leadDlgTitle">Customer</h2></div>
+    <div class="dlg-body" id="leadDlgBody"></div>
+    <div class="dlg-foot">
+      <button class="btn danger" id="leadDelete" type="button">Delete customer</button>
+      <button class="btn ghost" value="cancel" type="submit" style="margin-left:auto">Close</button>
+      <button class="btn primary" id="leadSaveNotes" type="button">Save notes</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast"></div>
+
+<div id="login">
+  <div class="box">
+    <h1>Al-Noor control</h1>
+    <p>Enter the dashboard password.</p>
+    <label class="field"><span>Password</span><input type="password" id="loginPw" autocomplete="current-password"></label>
+    <button class="btn primary" id="loginBtn" style="width:100%">Sign in</button>
+    <p id="loginErr" style="color:var(--brick); margin:12px 0 0; display:none"></p>
+  </div>
+</div>
+
+<script>
+/* ================================================================== *
+ * small helpers
+ * ================================================================== */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+/** Customers choose their own names. Everything from them gets escaped. */
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function toast(message, bad) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (bad ? ' bad' : '');
+  el.textContent = message;
+  $('#toast').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function when(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  if (mins < 1440) return Math.round(mins / 60) + 'h ago';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
+         d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function duration(seconds) {
+  if (!seconds && seconds !== 0) return '—';
+  const d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600), m = Math.floor((seconds % 3600) / 60);
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+const state = { authed: false, settings: null, listings: [], customers: [], view: 'overview' };
+
+async function api(path, options = {}) {
+  let res;
+  try {
+    res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (err) {
+    throw new Error('No answer from the server. Is it still running? Start it with "npm start".');
+  }
+  // 401 anywhere else means the session expired, so bring the login box back. On the
+  // login request itself it just means the password was wrong — let that message through.
+  if (res.status === 401 && path !== '/api/login') {
+    state.authed = false;
+    $('#login').classList.add('show');
+    throw new Error('Not signed in.');
+  }
+  // A static file server — VS Code Live Server, python -m http.server, or the file
+  // opened straight off disk — only answers GET. It replies 405 to every POST the
+  // dashboard makes and hands back HTML for /api/ paths. Say that plainly, because
+  // "Request failed (405)" on the login box tells you nothing useful.
+  const type = res.headers.get('content-type') || '';
+  if (res.status === 405 || res.status === 501 || !type.includes('json')) {
+    throw new Error(
+      'This page is being served by a plain file server (VS Code Live Server?), which cannot run the '
+      + 'dashboard API. Close that preview, run "npm start" in the al-noor-bot-v4 folder, then open '
+      + 'http://localhost:3000'
+    );
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.message || ('Request failed (' + res.status + ')'));
+  return data;
+}
+
+/* ================================================================== *
+ * login
+ * ================================================================== */
+async function signIn() {
+  const password = $('#loginPw').value;
+  $('#loginErr').style.display = 'none';
+  try {
+    await api('/api/login', { method: 'POST', body: { password } });
+    state.authed = true;
+    $('#login').classList.remove('show');
+    $('#loginPw').value = '';
+    boot();
+  } catch (err) {
+    $('#loginErr').textContent = err.message;
+    $('#loginErr').style.display = 'block';
+  }
+}
+$('#loginBtn').addEventListener('click', signIn);
+$('#loginPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); });
+$('#signOut').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+});
+
+/* ================================================================== *
+ * navigation
+ * ================================================================== */
+function show(view) {
+  state.view = view;
+  $$('nav button[data-view]').forEach((b) => b.setAttribute('aria-current', String(b.dataset.view === view)));
+  $$('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + view));
+  if (view === 'overview') loadOverview();
+  if (view === 'leads') loadLeads();
+  if (view === 'listings') loadListings();
+  if (view === 'messages' || view === 'settings') loadSettings();
+  if (view === 'logs') loadLogs();
+}
+$$('nav button[data-view]').forEach((b) => b.addEventListener('click', () => show(b.dataset.view)));
+$$('[data-refresh]').forEach((b) => b.addEventListener('click', () => show(b.dataset.refresh)));
+
+/* ================================================================== *
+ * the wire — connection state
+ * ================================================================== */
+const STATE_COPY = {
+  stopped:      { dot: '',      text: 'Not connected' },
+  starting:     { dot: 'warn',  text: 'Starting…' },
+  qr:           { dot: 'warn',  text: 'Waiting for QR scan' },
+  connected:    { dot: 'live',  text: 'Live' },
+  reconnecting: { dot: 'bad',   text: 'Reconnecting…' },
+};
+
+async function refreshStatus() {
+  let status;
+  try {
+    status = await api('/api/bot/status');
+  } catch { return; }
+
+  const copy = STATE_COPY[status.status] || { dot: '', text: status.status };
+  $('#stateDot').className = 'dot ' + copy.dot;
+  let text = copy.text;
+  if (status.status === 'connected' && status.me?.name) text += ' · ' + status.me.name;
+  if (status.status === 'connected' && !status.autoReplyEnabled) text += ' · auto-reply off';
+  if (status.queueDepth) text += ' · ' + status.queueDepth + ' queued';
+  $('#stateText').textContent = text;
+
+  const action = $('#wireAction');
+  if (status.status === 'connected' || status.status === 'qr' || status.status === 'starting') {
+    action.textContent = 'Stop';
+    action.onclick = () => botAction('stop');
+  } else {
+    action.textContent = 'Connect';
+    action.onclick = () => botAction('start');
+  }
+
+  const qrWrap = $('#wireQr');
+  if (status.qrDataUrl) {
+    $('#qrImg').src = status.qrDataUrl;
+    qrWrap.classList.add('show');
+  } else {
+    qrWrap.classList.remove('show');
+  }
+
+  const badge = $('#connBadge');
+  badge.textContent = copy.text;
+  badge.className = 'tag ' + (status.status === 'connected' ? 'current' : 'sold');
+  $('#connDetail').innerHTML = [
+    ['Connected number', status.me?.id ? esc(status.me.id.split(':')[0]) : '—'],
+    ['Device name', esc(status.me?.name || '—')],
+    ['Connected since', status.connectedAt ? esc(when(status.connectedAt)) : '—'],
+    ['Reconnect attempts', status.reconnectAttempts || 0],
+    ['Queued messages', status.queueDepth || 0],
+    ['Last problem', esc(status.lastError || 'none')],
+  ].map(([label, value]) => '<div><div class="l muted" style="font-size:11.5px">' + label + '</div><div class="mono">' + value + '</div></div>').join('');
+}
+
+async function botAction(what) {
+  try {
+    const result = await api('/api/bot/' + what, { method: 'POST' });
+    toast(result.message || 'Done');
+  } catch (err) {
+    toast(err.message, true);
+  }
+  refreshStatus();
+}
+$('#btnConnect').addEventListener('click', () => botAction('start'));
+$('#btnStop').addEventListener('click', () => botAction('stop'));
+$('#btnLogout').addEventListener('click', () => {
+  if (confirm('Unlink the device? The next Connect will need a fresh QR scan.')) botAction('logout');
+});
+
+$('#restoreFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const backup = JSON.parse(await file.text());
+    const result = await api('/api/session/restore', { method: 'POST', body: backup });
+    toast(result.message);
+  } catch (err) {
+    toast(err.message, true);
+  }
+  e.target.value = '';
+});
+
+$('#btnSend').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/messages/send', { method: 'POST', body: { to: $('#sendTo').value, text: $('#sendText').value } });
+    toast(result.message);
+    $('#sendText').value = '';
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+/* ================================================================== *
+ * overview
+ * ================================================================== */
+async function loadOverview() {
+  let data;
+  try { data = await api('/api/overview'); } catch (err) { return toast(err.message, true); }
+
+  $('#overviewSub').textContent = 'Server up ' + duration(data.serverUptimeSeconds) + ' · data in ' + data.dataDir;
+
+  const s = data.stats;
+  $('#tiles').innerHTML = [
+    ['Customers', s.customers, true],
+    ['Visit requests', s.visitRequests, true],
+    ['Seller leads', s.sellerLeads, true],
+    ['Agent requests', s.agentRequests, false],
+    ['Messages received', s.messagesIn, false],
+    ['Messages sent', s.messagesOut, false],
+    ['For sale', s.currentListings, false],
+    ['Sold on record', s.soldListings, false],
+  ].map(([label, num, accent]) =>
+    '<div class="tile' + (accent ? ' accent' : '') + '"><div class="n">' + Number(num || 0).toLocaleString() +
+    '</div><div class="l">' + label + '</div></div>'
+  ).join('');
+
+  $('#warnings').innerHTML = (data.warnings || [])
+    .map((w) => '<div class="warn ' + (w.level === 'info' ? 'info' : '') + '">' + esc(w.message) + '</div>').join('');
+
+  const peak = Math.max(1, ...data.trend.map((d) => Math.max(d.in, d.out)));
+  $('#chart').innerHTML = data.trend.map((d) => {
+    const label = d.day.slice(8) + '/' + d.day.slice(5, 7);
+    return '<div class="bar" title="' + esc(d.day) + ': ' + d.in + ' in, ' + d.out + ' out, ' + d.leads + ' leads">' +
+      '<i class="out" style="height:' + Math.round((d.out / peak) * 78) + 'px"></i>' +
+      '<i style="height:' + Math.round((d.in / peak) * 78) + 'px"></i>' +
+      '<span>' + label + '</span></div>';
+  }).join('');
+
+  if (!data.recent.length) {
+    $('#recentWrap').innerHTML = '<div class="empty"><strong>No activity yet</strong>Once a buyer messages the agency number, their inquiry lands here.</div>';
+  } else {
+    $('#recentWrap').innerHTML = '<table><thead><tr><th>When</th><th>Type</th><th>Customer</th><th>Detail</th></tr></thead><tbody>' +
+      data.recent.map((i) =>
+        '<tr><td class="mono">' + esc(when(i.timestamp)) + '</td>' +
+        '<td><span class="tag ' + esc(i.kind) + '">' + esc(kindLabel(i.kind)) + '</span></td>' +
+        '<td>' + esc(i.contactName || i.customerName || i.jid.split('@')[0]) + '</td>' +
+        '<td>' + detailOf(i) + '</td></tr>'
+      ).join('') + '</tbody></table>';
+  }
+}
+
+function kindLabel(kind) {
+  return { visit_request: 'Visit request', sell_lead: 'Seller lead', agent_request: 'Agent request', manual_reply: 'Manual reply' }[kind] || kind;
+}
+
+function detailOf(i) {
+  if (i.kind === 'visit_request') {
+    const props = (i.shortlist || []).map((p) => p.title).join(', ');
+    return esc('Prefers ' + (i.preferredTime || '—')) + '<br><span class="muted">' + esc(props || 'no properties shortlisted') + '</span>';
+  }
+  if (i.kind === 'sell_lead') {
+    return esc((i.propertyType || 'Property') + ' in ' + (i.location || '—')) + '<br><span class="muted">' + esc('Expects ' + (i.expectedPrice || '—')) + '</span>';
+  }
+  if (i.kind === 'agent_request') return '<span class="muted">' + esc(i.reason || 'Asked for a human') + '</span>';
+  if (i.kind === 'manual_reply') return '<span class="muted">' + esc(String(i.text || '').slice(0, 90)) + '</span>';
+  return '';
+}
+
+/* ================================================================== *
+ * leads
+ * ================================================================== */
+async function loadLeads() {
+  let data;
+  try { data = await api('/api/leads'); } catch (err) { return toast(err.message, true); }
+  state.customers = data.customers;
+
+  if (!data.customers.length) {
+    $('#leadsWrap').innerHTML = '<div class="empty"><strong>No customers yet</strong>Message the connected number from another phone to create the first one.</div>';
+    return;
+  }
+  $('#leadsWrap').innerHTML = '<table><thead><tr><th>Customer</th><th>Phone</th><th>Inquiries</th><th>Last seen</th><th></th></tr></thead><tbody>' +
+    data.customers.map((c, index) => {
+      const kinds = {};
+      c.interactions.forEach((i) => { kinds[i.kind] = (kinds[i.kind] || 0) + 1; });
+      const chips = Object.entries(kinds)
+        .map(([kind, n]) => '<span class="tag ' + esc(kind) + '">' + esc(kindLabel(kind)) + (n > 1 ? ' ×' + n : '') + '</span>')
+        .join(' ');
+      return '<tr><td><strong>' + esc(c.name || c.pushName || 'Unnamed') + '</strong>' +
+        '<br><span class="muted mono" style="font-size:11.5px">' + esc(c.jid) + '</span></td>' +
+        '<td class="mono">' + esc(c.phone || '—') + '</td>' +
+        '<td>' + (chips || '<span class="muted">—</span>') + '</td>' +
+        '<td class="mono">' + esc(when(c.lastSeen)) + '</td>' +
+        '<td style="text-align:right"><button class="btn small" data-lead="' + index + '">Open</button></td></tr>';
+    }).join('') + '</tbody></table>';
+
+  $$('#leadsWrap [data-lead]').forEach((b) => b.addEventListener('click', () => openLead(state.customers[Number(b.dataset.lead)])));
+}
+
+function openLead(customer) {
+  $('#leadDlgTitle').textContent = customer.name || customer.pushName || customer.jid.split('@')[0];
+  $('#leadDlgBody').innerHTML =
+    '<div class="grid" style="grid-template-columns:1fr 1fr; margin-bottom:14px">' +
+      '<div><div class="muted" style="font-size:11.5px">Chat id</div><div class="mono" style="word-break:break-all">' + esc(customer.jid) + '</div></div>' +
+      '<div><div class="muted" style="font-size:11.5px">Phone</div><div class="mono">' + esc(customer.phone || '—') + '</div></div>' +
+      '<div><div class="muted" style="font-size:11.5px">First seen</div><div class="mono">' + esc(when(customer.firstSeen)) + '</div></div>' +
+      '<div><div class="muted" style="font-size:11.5px">Last seen</div><div class="mono">' + esc(when(customer.lastSeen)) + '</div></div>' +
+    '</div>' +
+    '<label class="field"><span>Private notes</span><textarea id="leadNotes">' + esc(customer.notes || '') + '</textarea></label>' +
+    '<label class="field"><span>Send a message now</span><textarea id="leadReply" placeholder="Hi ' + esc((customer.name || '').split(' ')[0] || 'there') + ', James here from Al-Noor…"></textarea></label>' +
+    '<button class="btn primary small" id="leadSend">Send message</button>' +
+    '<h3 style="margin:20px 0 8px">Inquiry history</h3>' +
+    (customer.interactions.length
+      ? customer.interactions.slice().reverse().map((i) =>
+          '<div style="border-left:2px solid var(--line); padding:0 0 12px 12px; margin-left:3px">' +
+          '<span class="tag ' + esc(i.kind) + '">' + esc(kindLabel(i.kind)) + '</span> ' +
+          '<span class="muted mono" style="font-size:11.5px">' + esc(when(i.timestamp)) + '</span>' +
+          '<div style="margin-top:5px">' + detailOf(i) + '</div></div>'
+        ).join('')
+      : '<p class="muted">Nothing recorded yet.</p>');
+
+  $('#leadSend').addEventListener('click', async () => {
+    try {
+      const result = await api('/api/messages/send', { method: 'POST', body: { to: customer.jid, text: $('#leadReply').value } });
+      toast(result.message);
+      $('#leadReply').value = '';
+    } catch (err) { toast(err.message, true); }
+  });
+  $('#leadSaveNotes').onclick = async () => {
+    try {
+      await api('/api/leads/' + encodeURIComponent(customer.jid) + '/notes', { method: 'PUT', body: { notes: $('#leadNotes').value } });
+      toast('Notes saved');
+      $('#leadDlg').close();
+      loadLeads();
+    } catch (err) { toast(err.message, true); }
+  };
+  $('#leadDelete').onclick = async () => {
+    if (!confirm('Delete this customer and their whole history?')) return;
+    try {
+      await api('/api/leads/' + encodeURIComponent(customer.jid), { method: 'DELETE' });
+      toast('Customer deleted');
+      $('#leadDlg').close();
+      loadLeads();
+    } catch (err) { toast(err.message, true); }
+  };
+  $('#leadDlg').showModal();
+}
+
+/* ================================================================== *
+ * listings
+ * ================================================================== */
+async function loadListings() {
+  let data;
+  try { data = await api('/api/listings'); } catch (err) { return toast(err.message, true); }
+  state.listings = data.listings;
+  renderListings();
+}
+
+$('#listingFilter').addEventListener('change', renderListings);
+
+function renderListings() {
+  const filter = $('#listingFilter').value;
+  const rows = state.listings.filter((l) => {
+    if (filter === 'all') return true;
+    if (filter === 'archived') return l.active === false;
+    return l.status === filter && l.active !== false;
+  });
+
+  if (!rows.length) {
+    $('#listingsWrap').innerHTML = '<div class="empty"><strong>Nothing here</strong>Add a listing, or import your CRM export as CSV.</div>';
+    return;
+  }
+  $('#listingsWrap').innerHTML = '<table><thead><tr><th></th><th>Property</th><th>Price</th><th>Specs</th><th>Status</th><th></th></tr></thead><tbody>' +
+    rows.map((l) => {
+      const id = state.listings.indexOf(l);
+      const price = l.priceDisplay || (l.priceNumeric ? '$' + Number(l.priceNumeric).toLocaleString() : 'Contact agent');
+      const tag = l.active === false ? '<span class="tag archived">Archived</span>'
+        : '<span class="tag ' + esc(l.status) + '">' + (l.status === 'sold' ? 'Sold' : 'For sale') + '</span>';
+      return '<tr>' +
+        '<td>' + (l.heroImageUrl ? '<img class="thumb" src="' + esc(l.heroImageUrl) + '" alt="" loading="lazy">' : '<div class="thumb"></div>') + '</td>' +
+        '<td><strong>' + esc(l.title || '(no headline)') + '</strong><br><span class="muted">' + esc(l.address) + '</span></td>' +
+        '<td class="mono">' + esc(price) + '</td>' +
+        '<td class="mono">' + [l.bedrooms, l.bathrooms, l.parking].map((v) => (v == null ? '-' : v)).join(' / ') + '</td>' +
+        '<td>' + tag + '</td>' +
+        '<td style="text-align:right; white-space:nowrap">' +
+          '<button class="btn small" data-edit="' + id + '">Edit</button> ' +
+          '<button class="btn small danger" data-del="' + id + '">Delete</button></td></tr>';
+    }).join('') + '</tbody></table>';
+
+  $$('#listingsWrap [data-edit]').forEach((b) => b.addEventListener('click', () => openListing(state.listings[Number(b.dataset.edit)])));
+  $$('#listingsWrap [data-del]').forEach((b) => b.addEventListener('click', async () => {
+    const listing = state.listings[Number(b.dataset.del)];
+    if (!confirm('Delete "' + (listing.title || listing.address) + '"?')) return;
+    try {
+      await api('/api/listings/' + listing.id, { method: 'DELETE' });
+      toast('Listing deleted');
+      loadListings();
+    } catch (err) { toast(err.message, true); }
+  }));
+}
+
+let editingId = null;
+
+function openListing(listing) {
+  editingId = listing ? listing.id : null;
+  $('#listingDlgTitle').textContent = listing ? 'Edit listing' : 'New listing';
+  const form = $('#listingForm');
+  form.reset();
+  if (listing) {
+    for (const [key, value] of Object.entries(listing)) {
+      const field = form.elements[key];
+      if (!field) continue;
+      if (field.type === 'checkbox') field.checked = value !== false;
+      else field.value = value == null ? '' : value;
+    }
+  }
+  $('#listingDlg').showModal();
+}
+$('#newListingBtn').addEventListener('click', () => openListing(null));
+
+$('#listingSave').addEventListener('click', async () => {
+  const form = $('#listingForm');
+  const body = {};
+  for (const field of form.elements) {
+    if (!field.name) continue;
+    body[field.name] = field.type === 'checkbox' ? field.checked : field.value;
+  }
+  if (!body.address && !body.title) return toast('A headline or an address is required.', true);
+  try {
+    if (editingId) await api('/api/listings/' + editingId, { method: 'PUT', body });
+    else await api('/api/listings', { method: 'POST', body });
+    toast('Listing saved');
+    $('#listingDlg').close();
+    loadListings();
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#importBtn').addEventListener('click', () => $('#importDlg').showModal());
+$('#importRun').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/listings/import', {
+      method: 'POST',
+      body: { csv: $('#importCsv').value, status: $('#importStatus').value, replaceExisting: $('#importReplace').checked },
+    });
+    toast('Imported ' + result.imported + ' listing(s)');
+    if (result.unmapped?.length) toast('Columns skipped: ' + result.unmapped.slice(0, 5).join(', '), true);
+    $('#importDlg').close();
+    $('#importCsv').value = '';
+    loadListings();
+  } catch (err) { toast(err.message, true); }
+});
+
+/* ================================================================== *
+ * settings + bot messages
+ * ================================================================== */
+const SETTINGS_SCHEMA = [
+  { group: 'business', title: 'Agency', fields: [
+    { key: 'name', label: 'Agency name', type: 'text' },
+    { key: 'tagline', label: 'Tagline', type: 'text' },
+    { key: 'currencySymbol', label: 'Currency symbol', type: 'text' },
+    { key: 'numberLocale', label: 'Number format', type: 'text', hint: 'en-AU writes prices as 1,290,000' },
+  ]},
+  { group: 'admin', title: 'Lead notifications', fields: [
+    { key: 'number', label: "Agent's WhatsApp number", type: 'text', hint: 'Country code first, digits only. 61412345678' },
+    { key: 'notifyVisitRequest', label: 'Send me visit requests', type: 'bool' },
+    { key: 'notifySellerLead', label: 'Send me seller leads', type: 'bool' },
+    { key: 'notifyAgentRequest', label: 'Send me "talk to an agent" requests', type: 'bool' },
+    { key: 'agentRequestCooldownMinutes', label: 'Minutes before the same customer can page you again', type: 'number' },
+  ]},
+  { group: 'behavior', title: 'How the bot behaves', fields: [
+    { key: 'autoReplyEnabled', label: 'Answer customers automatically', type: 'bool', hint: 'Off = stays connected, sends the holding message instead' },
+    { key: 'maxCardsShown', label: 'Listing cards per page', type: 'number', hint: '3 keeps it readable; buyers can reply "more"' },
+    { key: 'sendImages', label: 'Send the photo with each listing', type: 'bool' },
+    { key: 'sendReadReceipts', label: 'Mark customer messages as read', type: 'bool' },
+    { key: 'showTypingIndicator', label: 'Show "typing…" before replying', type: 'bool' },
+    { key: 'askBudget', label: 'Ask buyers for a budget', type: 'bool', hint: 'Adds one question and filters by price' },
+    { key: 'replyToGroups', label: 'Reply inside group chats', type: 'bool' },
+    { key: 'afterHoursEnabled', label: 'Add an after-hours note', type: 'bool' },
+    { key: 'afterHoursFrom', label: 'After hours start', type: 'text', hint: '24h clock, e.g. 19:00' },
+    { key: 'afterHoursTo', label: 'After hours end', type: 'text', hint: 'e.g. 08:00' },
+    { key: 'resetKeywords', label: 'Words that restart the chat', type: 'text' },
+    { key: 'greetKeywords', label: 'Greetings', type: 'text' },
+    { key: 'agentKeywords', label: 'Words that page a human', type: 'text' },
+    { key: 'shortlistKeywords', label: 'Words that show the shortlist', type: 'text' },
+    { key: 'moreKeywords', label: 'Words that load more results', type: 'text' },
+  ]},
+  { group: 'rate', title: 'Sending speed', fields: [
+    { key: 'perMinuteLimit', label: 'Maximum messages per minute', type: 'number', hint: 'Whole account, not per chat. Above ~20 raises ban risk.' },
+    { key: 'minDelayMs', label: 'Shortest gap between messages (ms)', type: 'number' },
+    { key: 'maxDelayMs', label: 'Longest gap between messages (ms)', type: 'number' },
+    { key: 'typingMinMs', label: 'Shortest typing pause (ms)', type: 'number' },
+    { key: 'typingMaxMs', label: 'Longest typing pause (ms)', type: 'number' },
+    { key: 'addRandomEmoji', label: 'Occasionally add a friendly emoji', type: 'bool' },
+  ]},
+];
+
+const TEXT_STEPS = [
+  { title: 'Welcome and menu', keys: ['welcome', 'menuItem1', 'menuItem2', 'menuItem3', 'menuItem4', 'invalidMenu'] },
+  { title: 'Search questions', keys: ['askSuburbCurrent', 'askSuburbSold', 'askBeds', 'askBudget'] },
+  { title: 'Showing results', keys: ['resultsHeader', 'resultsHeaderWidened', 'resultsFooter', 'soldHeader', 'soldFooter', 'noMatch', 'noMoreResults', 'backToResults'] },
+  { title: 'Choosing a property', keys: ['propertyActions', 'soldPropertyActions', 'shortlistAdded', 'shortlistEmpty'] },
+  { title: 'Booking a visit', keys: ['askVisitName', 'askVisitPhone', 'askVisitTime', 'visitDone'] },
+  { title: 'Selling and appraisals', keys: ['askSellType', 'askSellLocation', 'askSellPrice', 'askSellName', 'askSellPhone', 'sellDone'] },
+  { title: 'Handover and fallbacks', keys: ['agentNotified', 'agentAlreadyNotified', 'invalidPhone', 'afterHoursNote', 'fallback', 'errorNote', 'autoReplyOff', 'newSearchPrompt'] },
+];
+
+const TEXT_HINTS = {
+  welcome: '{{business}} and {{menu}} are filled in for you',
+  resultsHeader: '{{shown}} and {{total}}',
+  resultsHeaderWidened: '{{shown}} and {{total}}',
+  resultsFooter: '{{more}} appears only when another page exists',
+  soldHeader: '{{shown}} and {{total}}',
+  soldFooter: '{{more}}',
+  propertyActions: '{{title}}',
+  soldPropertyActions: '{{title}} and {{price}}',
+  shortlistAdded: '{{title}} and {{count}}',
+  visitDone: '{{ref}} {{name}} {{phone}} {{time}} {{count}}',
+  menuItem1: 'Shown as option 1',
+  menuItem2: 'Shown as option 2',
+  menuItem3: 'Shown as option 3',
+  menuItem4: 'Shown as option 4',
+  afterHoursNote: 'Appended to every reply while after-hours is on',
+};
+
+function labelFor(key) {
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (c) => c.toUpperCase())
+    .replace(/\bmsg\b/i, 'message');
+}
+
+async function loadSettings() {
+  if (!state.settings) {
+    try { state.settings = (await api('/api/settings')).settings; }
+    catch (err) { return toast(err.message, true); }
+  }
+  $('#brandName').innerHTML = esc(state.settings.business.name) + '<small>control</small>';
+  document.title = state.settings.business.name + ' — Control';
+  renderSettings();
+  renderTexts();
+}
+
+function renderSettings() {
+  $('#settingsWrap').innerHTML = SETTINGS_SCHEMA.map((section) =>
+    '<div class="card"><div class="card-head"><h2>' + esc(section.title) + '</h2></div><div class="card-body">' +
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">' +
+    section.fields.map((field) => {
+      const value = state.settings[section.group][field.key];
+      const name = section.group + '.' + field.key;
+      if (field.type === 'bool') {
+        return '<label class="check" style="align-self:center"><input type="checkbox" data-setting="' + name + '"' + (value ? ' checked' : '') + '>' +
+          '<span>' + esc(field.label) + (field.hint ? '<em class="muted" style="display:block; font-style:normal; font-size:11.5px">' + esc(field.hint) + '</em>' : '') + '</span></label>';
+      }
+      return '<label class="field"><span>' + esc(field.label) + '</span>' +
+        '<input type="' + (field.type === 'number' ? 'number' : 'text') + '" data-setting="' + name + '" value="' + esc(value) + '">' +
+        (field.hint ? '<em>' + esc(field.hint) + '</em>' : '') + '</label>';
+    }).join('') + '</div></div></div>'
+  ).join('');
+}
+
+$('#saveSettings').addEventListener('click', async () => {
+  const patch = {};
+  $$('[data-setting]').forEach((input) => {
+    const [group, key] = input.dataset.setting.split('.');
+    if (!patch[group]) patch[group] = {};
+    patch[group][key] = input.type === 'checkbox' ? input.checked
+      : input.type === 'number' ? Number(input.value)
+      : input.value;
+  });
+  try {
+    state.settings = (await api('/api/settings', { method: 'PUT', body: patch })).settings;
+    toast('Settings saved — the bot picks them up on the next message');
+    loadSettings();
+  } catch (err) { toast(err.message, true); }
+});
+
+function renderTexts() {
+  $('#textSteps').innerHTML = TEXT_STEPS.map((step, index) =>
+    '<div class="step"><div class="step-head"><span class="step-n">' + String(index + 1).padStart(2, '0') + '</span><h2>' + esc(step.title) + '</h2></div>' +
+    step.keys.map((key) => {
+      const value = state.settings.texts[key] == null ? '' : state.settings.texts[key];
+      const short = value.length < 60 && !value.includes('\n');
+      return '<label class="field"><span>' + esc(labelFor(key)) + '</span>' +
+        (short
+          ? '<input type="text" data-text="' + key + '" value="' + esc(value) + '">'
+          : '<textarea data-text="' + key + '" rows="' + Math.min(9, Math.max(2, value.split('\n').length + 1)) + '">' + esc(value) + '</textarea>') +
+        (TEXT_HINTS[key] ? '<em>' + esc(TEXT_HINTS[key]) + '</em>' : '') + '</label>';
+    }).join('') + '</div>'
+  ).join('');
+}
+
+$('#saveTexts').addEventListener('click', async () => {
+  const texts = {};
+  $$('[data-text]').forEach((input) => { texts[input.dataset.text] = input.value; });
+  try {
+    state.settings = (await api('/api/settings', { method: 'PUT', body: { texts } })).settings;
+    toast('Messages saved');
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#resetTexts').addEventListener('click', async () => {
+  if (!confirm('Restore every bot message to the default wording?')) return;
+  try {
+    state.settings = (await api('/api/settings/reset-texts', { method: 'POST' })).settings;
+    renderTexts();
+    toast('Default wording restored');
+  } catch (err) { toast(err.message, true); }
+});
+
+/* ================================================================== *
+ * logs
+ * ================================================================== */
+async function loadLogs() {
+  let data;
+  try { data = await api('/api/logs?limit=300'); } catch { return; }
+  const wrap = $('#logsWrap');
+  const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 40;
+  wrap.innerHTML = data.logs.length
+    ? data.logs.map((l) =>
+        '<div class="logline ' + esc(l.level) + '"><span class="t">' +
+        esc(new Date(l.at).toLocaleTimeString()) + '</span>  ' + esc(l.message) + '</div>'
+      ).join('')
+    : 'Nothing logged yet.';
+  if (atBottom) wrap.scrollTop = wrap.scrollHeight;
+}
+
+/* ================================================================== *
+ * boot + polling
+ * ================================================================== */
+async function boot() {
+  try { await api('/api/session'); state.authed = true; }
+  catch { $('#login').classList.add('show'); return; }
+  await loadSettings();
+  refreshStatus();
+  show(state.view);
+}
+
+setInterval(() => { if (state.authed) refreshStatus(); }, 5000);
+setInterval(() => {
+  if (!state.authed) return;
+  if (state.view === 'overview') loadOverview();
+  if (state.view === 'logs' && $('#autoLogs').checked) loadLogs();
+}, 15000);
+
+boot();
+</script>
+</body>
+</html>
