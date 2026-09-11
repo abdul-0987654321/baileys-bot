@@ -604,6 +604,52 @@ function clearSession() {
   return removed;
 }
 
+/* ---------- Auto session backup/restore via Google Sheet ---------- *
+ * Free Render plan pe persistent disk nahi milta — har deploy pe /data reset ho jata hai
+ * aur WhatsApp session (auth_session/) gayab ho jati, matlab dobara QR scan karna padta.
+ * Isliye session ko bhi (patient data ki tarah) Google Sheet me chunk karke backup karte
+ * hain, aur boot hote waqt agar local session khaali mile to sheet se wapas restore kar
+ * lete hain — sirf pehli baar QR scan karna padega, uske baad khud-ba-khud recover hoga.
+ */
+const SESSION_CHUNK_SIZE = 40000; // Sheet cell limit ~50,000 chars, margin rakha
+
+async function backupSessionToSheet() {
+  if (!sheets.SYNC_ENABLED) return { ok: false, message: 'Sheet sync disabled.' };
+  const backup = backupSession();
+  if (!backup.fileCount) return { ok: false, message: 'No session to back up yet.' };
+  const json = JSON.stringify(backup);
+  const chunks = [];
+  for (let i = 0; i < json.length; i += SESSION_CHUNK_SIZE) chunks.push(json.slice(i, i + SESSION_CHUNK_SIZE));
+  await sheets.saveSessionChunks(chunks);
+  return { ok: true, chunks: chunks.length };
+}
+
+function hasLocalSession() {
+  return fs.existsSync(PATHS.auth) && fs.readdirSync(PATHS.auth).some((f) => fs.statSync(path.join(PATHS.auth, f)).isFile());
+}
+
+async function restoreSessionFromSheetIfEmpty() {
+  if (!sheets.SYNC_ENABLED) return { ok: false, message: 'Sheet sync disabled.' };
+  if (hasLocalSession()) return { ok: false, message: 'Local session already present — skipping restore.' };
+  const chunks = await sheets.loadSessionChunks();
+  if (!chunks.length) return { ok: false, message: 'No session backup found on sheet.' };
+  const backup = JSON.parse(chunks.join(''));
+  const written = restoreSession(backup);
+  return { ok: true, message: `Restored ${written} session file(s) from Google Sheet.` };
+}
+
+// Debounce: creds.update Baileys me baar baar fire hota hai (khaaskar pairing ke waqt) —
+// har baar sheet call nahi karte, chhoti si delay ke baad ek hi combined backup bhejte hain.
+let sessionBackupTimer = null;
+function scheduleSessionBackup(delayMs = 15000) {
+  if (sessionBackupTimer) clearTimeout(sessionBackupTimer);
+  sessionBackupTimer = setTimeout(() => {
+    sessionBackupTimer = null;
+    backupSessionToSheet().catch((err) => console.error('[store] session auto-backup failed:', err.message));
+  }, delayMs);
+  sessionBackupTimer.unref?.();
+}
+
 setInterval(flushStats, 10000).unref();
 process.on('exit', flushStats);
 
@@ -648,5 +694,8 @@ module.exports = {
   backupSession,
   restoreSession,
   clearSession,
+  backupSessionToSheet,
+  restoreSessionFromSheetIfEmpty,
+  scheduleSessionBackup,
   newId,
 };
