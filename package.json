@@ -1,22 +1,24 @@
 {
-  "name": "claude",
-  "version": "1.0.0",
-  "description": "",
+  "name": "australia-clinic-whatsapp-bot",
+  "version": "6.0.0",
+  "description": "Australia clinic WhatsApp bot — native buttons/list appointment automation + Google Sheet database + admin dashboard",
   "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "AUTOSTART_BOT=true node server.js"
   },
+  "dependencies": {
+    "@itsliaaa/baileys": "^0.3.18",
+    "express": "^4.19.2",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {},
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^7.0.0-rc14",
-    "@zassxd/baileys": "github:zassxd/baileys",
-    "express": "^5.2.1",
-    "pino": "^10.3.1",
-    "qrcode": "^1.5.4",
-    "qrcode-terminal": "^0.12.0"
-  }
+  "license": "ISC"
 }
