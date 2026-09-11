@@ -1,9 +1,7 @@
 'use strict';
 /**
- * server.js — one process: the HTML dashboard, its API, and the WhatsApp bot.
- *
- * Render only exposes a single port per service, so the bot lives inside the
- * same process as the web server. The dashboard drives it over /api/bot/*.
+ * server.js — One process: Clinic dashboard + REST API + WhatsApp bot.
+ * Australia Clinic edition — v6
  */
 
 const express = require('express');
@@ -11,15 +9,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
-/**
- * Load .env by hand, and do it BEFORE requiring store.js — store reads DATA_DIR
- * the moment it is imported, so anything later is too late.
- *
- * No dotenv dependency and no reliance on `node --env-file`: that flag only exists
- * on newer Node, and both `npm start` and Render's start command are plain
- * `node server.js`. A real environment variable always beats the file, which is
- * what lets Render's own Environment settings override whatever is in here.
- */
+/* ---------- tiny .env loader (no dependency needed) ---------- */
 function loadEnvFile() {
   try {
     const envPath = process.env.ENV_FILE || path.join(__dirname, '.env');
@@ -49,29 +39,28 @@ const app = express();
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '4mb' }));
+app.set('trust proxy', true); // Render ke peeche real IP ke liye
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  * auth — signed cookie, no database needed
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 
 let PASSWORD = process.env.DASHBOARD_PASSWORD;
 if (!PASSWORD) {
   PASSWORD = crypto.randomBytes(4).toString('hex');
   console.log('\n' + '='.repeat(64));
-  console.log('  DASHBOARD_PASSWORD is not set, so I generated a temporary one:');
+  console.log('  DASHBOARD_PASSWORD not set — generated a temporary one:');
   console.log(`      ${PASSWORD}`);
   console.log('  Set DASHBOARD_PASSWORD in your environment to keep it stable.');
   console.log('='.repeat(64) + '\n');
 }
 
 const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const COOKIE = 'anre_session';
+const COOKIE = 'clinic_session';
 const SESSION_DAYS = 7;
 
 function signToken() {
-  const body = Buffer.from(
-    JSON.stringify({ exp: Date.now() + SESSION_DAYS * 86400000 })
-  ).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ exp: Date.now() + SESSION_DAYS * 86400000 })).toString('base64url');
   const mac = crypto.createHmac('sha256', SECRET).update(body).digest('base64url');
   return `${body}.${mac}`;
 }
@@ -86,9 +75,7 @@ function verifyToken(token) {
   try {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     return payload.exp > Date.now();
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 function parseCookies(req) {
@@ -114,31 +101,18 @@ function loginBlocked(ip) {
 function noteFailedLogin(ip) {
   const entry = loginAttempts.get(ip) || { count: 0, until: 0 };
   entry.count += 1;
-  if (entry.count >= 6) {
-    entry.until = Date.now() + 5 * 60000;
-    entry.count = 0;
-  }
+  if (entry.count >= 6) { entry.until = Date.now() + 5 * 60000; entry.count = 0; }
   loginAttempts.set(ip, entry);
 }
 
 app.post('/api/login', (req, res) => {
   const ip = req.ip || 'unknown';
-  if (loginBlocked(ip)) {
-    return res.status(429).json({ ok: false, message: 'Too many attempts. Try again in 5 minutes.' });
-  }
+  if (loginBlocked(ip)) return res.status(429).json({ ok: false, message: 'Too many attempts. Try again in 5 minutes.' });
   const supplied = String(req.body?.password || '');
-  const ok =
-    supplied.length === PASSWORD.length &&
-    crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(PASSWORD));
-  if (!ok) {
-    noteFailedLogin(ip);
-    return res.status(401).json({ ok: false, message: 'Wrong password.' });
-  }
+  const ok = supplied.length === PASSWORD.length && crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(PASSWORD));
+  if (!ok) { noteFailedLogin(ip); return res.status(401).json({ ok: false, message: 'Wrong password.' }); }
   loginAttempts.delete(ip);
-  res.setHeader(
-    'Set-Cookie',
-    `${COOKIE}=${signToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86400}`
-  );
+  res.setHeader('Set-Cookie', `${COOKIE}=${signToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86400}`);
   res.json({ ok: true });
 });
 
@@ -148,10 +122,10 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/healthz', (req, res) => {
-  res.json({ ok: true, bot: bot.getStatus().status, uptimeSeconds: Math.round(process.uptime()) });
+  res.json({ ok: true, bot: bot.getStatus().status, clinicOpen: bot.isClinicOpen(), uptimeSeconds: Math.round(process.uptime()) });
 });
 
-// Everything else under /api needs a valid cookie.
+// Baaki sab /api endpoints ko valid cookie chahiye.
 app.use('/api', (req, res, next) => {
   if (verifyToken(parseCookies(req)[COOKIE])) return next();
   return res.status(401).json({ ok: false, message: 'Not signed in.' });
@@ -159,170 +133,128 @@ app.use('/api', (req, res, next) => {
 
 app.get('/api/session', (req, res) => res.json({ ok: true }));
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  * overview
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 
 app.get('/api/overview', (req, res) => {
-  const customers = store.listCustomers();
-  const listings = store.getListings();
+  const patients = store.listPatients();
   const stats = store.getStats();
+  const appointments = store.listAllAppointments();
 
-  const interactions = customers.flatMap((c) =>
-    c.interactions.map((i) => ({ ...i, jid: c.jid, customerName: c.name || c.pushName || null }))
-  );
-  const count = (kind) => interactions.filter((i) => i.kind === kind).length;
+  const upcoming = appointments.filter((a) => !a.cancelled && !a.completed);
+  const todayKey = new Date(new Date().toLocaleString('en-US', { timeZone: store.getSettings().clinic.timezone })).toISOString().slice(0, 10);
+  const todayCount = upcoming.filter((a) => a.date === todayKey).length;
 
   res.json({
     ok: true,
     bot: bot.getStatus(),
+    clinicOpen: bot.isClinicOpen(),
     stats: {
-      currentListings: listings.filter((l) => l.status === 'current' && l.active !== false).length,
-      soldListings: listings.filter((l) => l.status === 'sold' && l.active !== false).length,
-      archivedListings: listings.filter((l) => l.active === false).length,
-      customers: customers.length,
-      interactions: interactions.length,
-      visitRequests: count('visit_request'),
-      sellerLeads: count('sell_lead'),
-      agentRequests: count('agent_request'),
-      manualReplies: count('manual_reply'),
+      patients: patients.length,
+      totalAppointments: appointments.length,
+      upcomingAppointments: upcoming.length,
+      todayAppointments: todayCount,
+      confirmedAppointments: appointments.filter((a) => a.confirmed || a.status === 'confirmed').length,
       messagesIn: stats.messagesIn || 0,
       messagesOut: stats.messagesOut || 0,
-      imagesOut: stats.imagesOut || 0,
-      sendFailures: stats.sendFailures || 0,
-      firstBootAt: stats.firstBootAt,
+      appointmentsBooked: stats.appointmentsBooked || 0,
+      remindersQueued: stats.remindersQueued || 0,
+      reviewsRequested: stats.reviewsRequested || 0,
     },
     trend: store.lastNDays(14),
-    warnings: store.dataWarnings(),
-    recent: interactions
-      .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
-      .slice(0, 12),
+    recent: patients.slice(0, 12),
+    nextAppointments: upcoming.slice(0, 8),
+    sheet: store.sheets.getStatus(),
     dataDir: store.DATA_DIR,
     serverUptimeSeconds: Math.round(process.uptime()),
   });
 });
 
-/* ------------------------------------------------------------------ *
- * listings
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * patients / leads
+ * ================================================================== */
 
-app.get('/api/listings', (req, res) => res.json({ ok: true, listings: store.getListings() }));
+app.get('/api/patients', (req, res) => res.json({ ok: true, patients: store.listPatients() }));
 
-app.post('/api/listings', (req, res) => {
-  const listing = store.addListing(req.body || {});
-  res.json({ ok: true, listing });
+app.get('/api/patients/:jid', (req, res) => {
+  const jid = decodeURIComponent(req.params.jid);
+  res.json({ ok: true, patient: store.getPatient(jid) });
 });
 
-app.put('/api/listings/:id', (req, res) => {
-  const listing = store.updateListing(req.params.id, req.body || {});
-  if (!listing) return res.status(404).json({ ok: false, message: 'No listing with that id.' });
-  res.json({ ok: true, listing });
+app.put('/api/patients/:jid', (req, res) => {
+  const jid = decodeURIComponent(req.params.jid);
+  const patient = store.getPatient(jid);
+  if (req.body.opted_in !== undefined) patient.opted_in = Boolean(req.body.opted_in);
+  if (req.body.name !== undefined) patient.name = String(req.body.name);
+  if (req.body.notes !== undefined) patient.notes = String(req.body.notes);
+  store.savePatient(patient);
+  res.json({ ok: true, patient });
 });
 
-app.delete('/api/listings/:id', (req, res) => {
-  const removed = store.deleteListing(req.params.id);
-  if (!removed) return res.status(404).json({ ok: false, message: 'No listing with that id.' });
+app.delete('/api/patients/:jid', (req, res) => {
+  const removed = store.deletePatient(decodeURIComponent(req.params.jid));
+  if (!removed) return res.status(404).json({ ok: false, message: 'Patient not found.' });
   res.json({ ok: true });
 });
 
-/* --- CSV import ---------------------------------------------------- */
+/* ================================================================== *
+ * appointments
+ * ================================================================== */
 
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 1;
-        } else inQuotes = false;
-      } else field += ch;
-    } else if (ch === '"') inQuotes = true;
-    else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else if (ch !== '\r') field += ch;
-  }
-  if (field.length || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => r.some((v) => String(v).trim() !== ''));
-}
-
-const HEADER_ALIASES = {
-  refId: ['id', 'listingid', 'mlsid', 'ref', 'reference', 'propertyid'],
-  title: ['title', 'heading', 'headline', 'name', 'adheading'],
-  address: ['address', 'fulladdress', 'streetaddress', 'propertyaddress', 'addressfull'],
-  suburb: ['suburb', 'locality', 'city', 'town'],
-  priceDisplay: ['price', 'pricedisplay', 'displayprice', 'pricetext', 'advertisedprice', 'priceadvertised'],
-  priceNumeric: ['pricenumeric', 'saleprice', 'soldprice', 'searchprice', 'pricefrom', 'amount'],
-  bedrooms: ['bedrooms', 'beds', 'bed', 'attrbedrooms'],
-  bathrooms: ['bathrooms', 'baths', 'bath', 'attrbathrooms'],
-  parking: ['parking', 'cars', 'carspaces', 'garages', 'attrgarages'],
-  landSize: ['landsize', 'land', 'landarea', 'attrlandarea'],
-  description: ['description', 'details', 'adtext', 'body', 'comments'],
-  heroImageUrl: ['heroimageurl', 'image', 'imageurl', 'photo', 'mainimage', 'heroimage', 'images'],
-  agent: ['agent', 'agents', 'listingagent', 'agentname'],
-  soldDate: ['solddate', 'datesold', 'settlementdate', 'contractdate'],
-};
-
-function normaliseHeader(h) {
-  return String(h).toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function mapHeaders(headerRow) {
-  const mapping = {};
-  const unmapped = [];
-  headerRow.forEach((raw, index) => {
-    const key = normaliseHeader(raw);
-    const field = Object.keys(HEADER_ALIASES).find(
-      (f) => normaliseHeader(f) === key || HEADER_ALIASES[f].includes(key)
-    );
-    if (field) mapping[field] = index;
-    else if (String(raw).trim()) unmapped.push(String(raw).trim());
-  });
-  return { mapping, unmapped };
-}
-
-app.post('/api/listings/import', (req, res) => {
-  const { csv, status = 'current', replaceExisting = false } = req.body || {};
-  if (!csv || typeof csv !== 'string') {
-    return res.status(400).json({ ok: false, message: 'Paste the CSV text in the "csv" field.' });
-  }
-  const rows = parseCsv(csv);
-  if (rows.length < 2) {
-    return res.status(400).json({ ok: false, message: 'That CSV has a header but no rows.' });
-  }
-  const { mapping, unmapped } = mapHeaders(rows[0]);
-  if (mapping.address === undefined && mapping.title === undefined) {
-    return res.status(400).json({
-      ok: false,
-      message: 'I could not find an address or title column. Rename a column to "Address" and try again.',
-      unmapped,
-    });
-  }
-  const records = rows.slice(1).map((row) => {
-    const out = {};
-    for (const [field, index] of Object.entries(mapping)) out[field] = row[index];
-    return out;
-  });
-  const imported = store.importListings(records, { status, replaceExisting: Boolean(replaceExisting) });
-  res.json({ ok: true, imported, unmapped, total: store.getListings().length });
+app.get('/api/appointments', (req, res) => {
+  const all = store.listAllAppointments();
+  const view = req.query.view; // upcoming | past | all
+  let list = all;
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: store.getSettings().clinic.timezone })).toISOString().slice(0, 10);
+  if (view === 'upcoming') list = all.filter((a) => !a.cancelled && a.date >= today);
+  if (view === 'past') list = all.filter((a) => a.date < today || a.completed || a.cancelled);
+  res.json({ ok: true, appointments: list });
 });
 
-/* ------------------------------------------------------------------ *
+app.post('/api/appointments/:jid/:id/complete', (req, res) => {
+  const jid = decodeURIComponent(req.params.jid);
+  const a = store.completeAppointment(jid, req.params.id);
+  // completed_at set karo (review cron isi pe chalta hai)
+  if (a) store.updateAppointment(jid, req.params.id, { completed_at: new Date().toISOString() });
+  res.json({ ok: Boolean(a), appointment: a });
+});
+
+app.post('/api/appointments/:jid/:id/cancel', (req, res) => {
+  const jid = decodeURIComponent(req.params.jid);
+  const a = store.cancelAppointment(jid, req.params.id);
+  res.json({ ok: Boolean(a), appointment: a });
+});
+
+/** Naya appointment dashboard se manually book karo. */
+app.post('/api/appointments', (req, res) => {
+  const { jid, phone, date, time, type, practitioner, name } = req.body || {};
+  const targetJid = jid || (phone ? `${String(phone).replace(/\D/g, '')}@s.whatsapp.net` : null);
+  if (!targetJid) return res.status(400).json({ ok: false, message: 'Provide jid or phone.' });
+  if (!date || !time) return res.status(400).json({ ok: false, message: 'date and time are required.' });
+  if (store.isSlotTaken(date, time, targetJid)) return res.status(409).json({ ok: false, message: 'That slot is already booked.' });
+  const patient = store.getPatient(targetJid);
+  if (name && !patient.name) { patient.name = name; store.savePatient(patient); }
+  const result = store.bookSlot({ jid: targetJid, date, time, type: type || 'consultation', practitioner: practitioner || 'Any available' });
+  res.json({ ok: true, appointment: result.appointment });
+});
+
+/** Kisi din ke available slots (booking form ke liye). */
+app.get('/api/slots', (req, res) => {
+  const date = req.query.date;
+  if (!date) return res.status(400).json({ ok: false, message: 'date (YYYY-MM-DD) required.' });
+  res.json({ ok: true, date, slots: store.availableSlots(date), label: store.dayLabel(date) });
+});
+
+app.get('/api/days', (req, res) => {
+  const n = parseInt(req.query.days, 10) || store.getSettings().clinic.booking_days_ahead;
+  const days = store.upcomingDays(n).map((d) => ({ date: d, label: store.dayLabel(d) }));
+  res.json({ ok: true, days });
+});
+
+/* ================================================================== *
  * settings
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 
 app.get('/api/settings', (req, res) =>
   res.json({ ok: true, settings: store.getSettings(), defaults: store.DEFAULT_SETTINGS })
@@ -338,65 +270,9 @@ app.post('/api/settings/reset-texts', (req, res) => {
   res.json({ ok: true, settings });
 });
 
-/* ------------------------------------------------------------------ *
- * leads
- * ------------------------------------------------------------------ */
-
-app.get('/api/leads', (req, res) => res.json({ ok: true, customers: store.listCustomers() }));
-
-app.put('/api/leads/:jid/notes', (req, res) => {
-  const jid = decodeURIComponent(req.params.jid);
-  const record = store.getCustomer(jid);
-  record.jid = jid;
-  record.notes = String(req.body?.notes ?? '');
-  if (Array.isArray(req.body?.tags)) record.tags = req.body.tags.map(String);
-  store.saveCustomer(record);
-  res.json({ ok: true, customer: record });
-});
-
-app.delete('/api/leads/:jid', (req, res) => {
-  const removed = store.deleteCustomer(decodeURIComponent(req.params.jid));
-  if (!removed) return res.status(404).json({ ok: false, message: 'No customer file for that chat.' });
-  res.json({ ok: true });
-});
-
-function csvCell(value) {
-  const text = value == null ? '' : String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-app.get('/api/leads.csv', (req, res) => {
-  const header = ['When', 'Type', 'Chat', 'Name', 'Phone', 'Preferred time', 'Property type', 'Location', 'Expected price', 'Shortlist', 'Reference'];
-  const lines = [header.join(',')];
-  for (const customer of store.listCustomers()) {
-    for (const i of customer.interactions) {
-      lines.push(
-        [
-          i.timestamp,
-          i.kind,
-          customer.jid,
-          i.contactName || customer.name || customer.pushName || '',
-          i.contactPhone || customer.phone || '',
-          i.preferredTime || '',
-          i.propertyType || '',
-          i.location || '',
-          i.expectedPrice || '',
-          (i.shortlist || []).map((p) => `${p.title} (${p.price})`).join(' | '),
-          i.ref || '',
-        ]
-          .map(csvCell)
-          .join(',')
-      );
-    }
-  }
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="al-noor-leads-${new Date().toISOString().slice(0, 10)}.csv"`);
-  res.send(lines.join('\n'));
-});
-
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  * bot control
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 
 app.get('/api/bot/status', (req, res) => res.json({ ok: true, ...bot.getStatus() }));
 
@@ -426,24 +302,55 @@ app.post('/api/messages/send', async (req, res) => {
   res.status(result.ok ? 200 : 400).json(result);
 });
 
-/* ------------------------------------------------------------------ *
- * session backup / restore (the workaround for an ephemeral disk)
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * Google Sheet sync controls
+ * ================================================================== */
+
+app.get('/api/sheet/status', (req, res) => res.json({ ok: true, sheet: store.sheets.getStatus() }));
+
+app.post('/api/sheet/ping', async (req, res) => {
+  try {
+    const msg = await store.sheets.ping();
+    res.json({ ok: true, message: msg });
+  } catch (err) {
+    res.status(400).json({ ok: false, message: err.message });
+  }
+});
+
+/** Sab local data sheet pe force push. */
+app.post('/api/sheet/push', async (req, res) => {
+  try {
+    const result = await store.sheets.pushAll(store.listPatients, store.getSettings, store.getStats);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, message: err.message });
+  }
+});
+
+/** Sheet se saara data local me wapas laao (restore). */
+app.post('/api/sheet/restore', async (req, res) => {
+  try {
+    const result = await store.restoreFromSheet();
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, message: err.message });
+  }
+});
+
+/* ================================================================== *
+ * session backup / restore (ephemeral disk workaround)
+ * ================================================================== */
 
 app.get('/api/session/backup', (req, res) => {
   const backup = store.backupSession();
-  if (!backup.fileCount) {
-    return res.status(400).json({ ok: false, message: 'There is no session to back up yet. Connect and scan the QR first.' });
-  }
+  if (!backup.fileCount) return res.status(400).json({ ok: false, message: 'No session to back up yet. Connect and scan the QR first.' });
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="whatsapp-session-${new Date().toISOString().slice(0, 10)}.json"`);
   res.send(JSON.stringify(backup));
 });
 
 app.post('/api/session/restore', async (req, res) => {
-  if (bot.isConnected()) {
-    return res.status(400).json({ ok: false, message: 'Stop the bot before restoring a session.' });
-  }
+  if (bot.isConnected()) return res.status(400).json({ ok: false, message: 'Stop the bot before restoring a session.' });
   try {
     const written = store.restoreSession(req.body);
     res.json({ ok: true, message: `Restored ${written} session file(s). Press Connect.` });
@@ -452,15 +359,13 @@ app.post('/api/session/restore', async (req, res) => {
   }
 });
 
-/* ------------------------------------------------------------------ *
+/* ================================================================== *
  * static dashboard
- * ------------------------------------------------------------------ */
+ * ================================================================== */
 
 app.use(
   express.static(path.join(__dirname, 'public'), {
-    setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
-    },
+    setHeaders(res, filePath) { if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store'); },
   })
 );
 
@@ -469,14 +374,20 @@ app.use((req, res) => {
   return res.status(404).send('Not found');
 });
 
-/* ------------------------------------------------------------------ *
- * boot
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * boot + cron triggers
+ * ================================================================== */
 
-const server = app.listen(PORT, () => {
-  console.log(`\n  ${store.getSettings().business.name} — control dashboard`);
+const server = app.listen(PORT, async () => {
+  const s = store.getSettings();
+  console.log(`\n  ${s.business.name} — Clinic WhatsApp Dashboard`);
   console.log(`  http://localhost:${PORT}`);
-  console.log(`  data directory: ${store.DATA_DIR}\n`);
+  console.log(`  data directory: ${store.DATA_DIR}`);
+  console.log(`  sheet sync: ${store.sheets.SYNC_ENABLED ? 'ON' : 'OFF'}\n`);
+
+  // Render ephemeral disk — sheet se data wapas laao agar local khali hai
+  await store.autoRestoreIfEmpty().catch((e) => console.error('[boot] auto-restore:', e.message));
+
   if (String(process.env.AUTOSTART_BOT).toLowerCase() === 'true') {
     console.log('  AUTOSTART_BOT=true — connecting WhatsApp now');
     void bot.start();
@@ -484,6 +395,24 @@ const server = app.listen(PORT, () => {
     console.log('  Open the dashboard and press Connect to bring WhatsApp online.\n');
   }
 });
+
+// 24h + 2h appointment reminders — har ghante
+setInterval(async () => {
+  try { await bot.sendAppointmentReminders(); }
+  catch (err) { console.error('[cron] reminder job failed:', err.message); }
+}, 3600000);
+
+// Google review requests — har 30 minute
+setInterval(async () => {
+  try { await bot.sendReviewRequests(); }
+  catch (err) { console.error('[cron] review job failed:', err.message); }
+}, 1800000);
+
+// Pricing dekha par book nahi kiya — lead follow-up (3hr + next-day) — har 30 minute
+setInterval(async () => {
+  try { await bot.sendLeadFollowups(); }
+  catch (err) { console.error('[cron] lead follow-up job failed:', err.message); }
+}, 1800000);
 
 let shuttingDown = false;
 function shutdown(signal) {
@@ -493,7 +422,7 @@ function shutdown(signal) {
   bot.shutdown();
   store.flushStats();
   server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 4000).unref();
+  setTimeout(() => process.exit(0), 6000).unref();
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
