@@ -799,6 +799,14 @@ async function start() {
   log('info', 'Starting Baileys connection...');
   try {
     detachSocket();
+    // FIX: agar local session khaali hai (jaisa har deploy ke baad Free-plan pe hota hai),
+    // pehle Google Sheet se restore try karo — taake QR dobara scan na karna pade.
+    try {
+      const restored = await store.restoreSessionFromSheetIfEmpty();
+      if (restored.ok) log('info', restored.message);
+    } catch (err) {
+      log('warn', `Session restore from sheet failed: ${err.message}`);
+    }
     const { state: authState, saveCreds } = await useMultiFileAuthState(store.PATHS.auth);
     let version;
     try { ({ version } = await fetchLatestBaileysVersion()); } catch (_) { version = [2, 3000, 1015901307]; }
@@ -809,7 +817,11 @@ async function start() {
       browser: ['ClinicBot', 'Chrome', '120.0.0'],
     });
     runtime.sock = sock;
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', async (...args) => {
+      await saveCreds(...args);
+      // FIX: session file update hote hi (debounced) sheet pe bhi backup bhej do.
+      store.scheduleSessionBackup();
+    });
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
       if (qr) {
@@ -820,12 +832,18 @@ async function start() {
         runtime.status = 'connected'; runtime.qrDataUrl = null; runtime.connectedAt = new Date().toISOString();
         runtime.reconnectAttempts = 0; runtime.me = { id: sock.user?.id || null, name: sock.user?.name || sock.user?.verifiedName || null };
         log('info', `Connected as ${runtime.me.name || runtime.me.id}`); store.sheets.logEvent('info', 'Bot connected to WhatsApp');
+        store.scheduleSessionBackup(3000); // FIX: connect hote hi jald backup taake fresh pairing turant safe ho jaye
       }
       if (connection === 'close') {
         const code = lastDisconnect?.error?.output?.statusCode; const reason = lastDisconnect?.error?.message || 'closed';
         runtime.qrDataUrl = null;
         if (runtime.manualStop) { runtime.status = 'stopped'; log('info', 'Bot stopped.'); return; }
-        if (code === DisconnectReason.loggedOut) { runtime.status = 'stopped'; runtime.lastError = 'Device logged out. Scan QR again.'; store.clearSession(); log('warn', runtime.lastError); return; }
+        if (code === DisconnectReason.loggedOut) {
+          runtime.status = 'stopped'; runtime.lastError = 'Device logged out. Scan QR again.';
+          store.clearSession();
+          void store.sheets.clearSessionRemote(); // FIX: purani (ab invalid) session sheet se bhi hata do — warna agla restore usi ko dobara le aayega
+          log('warn', runtime.lastError); return;
+        }
         runtime.reconnectAttempts += 1; runtime.status = 'reconnecting'; runtime.lastError = `${reason} (code ${code})`;
         const backoff = Math.min(60000, 3000 * runtime.reconnectAttempts);
         log('warn', `Disconnected: ${runtime.lastError}. Retrying in ${backoff / 1000}s`);
@@ -855,6 +873,7 @@ async function logout() {
   runtime.manualStop = true;
   try { if (runtime.sock) await runtime.sock.logout(); } catch (_) {}
   detachSocket(); const removed = store.clearSession();
+  void store.sheets.clearSessionRemote(); // FIX: manual logout pe bhi sheet-side backup saaf karo
   runtime.status = 'stopped'; runtime.qrDataUrl = null; runtime.me = null; runtime.connectedAt = null;
   log('info', `Session cleared (${removed} files).`); return { ok: true, message: 'Logged out and session cleared.' };
 }
