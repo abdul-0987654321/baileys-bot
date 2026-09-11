@@ -168,6 +168,19 @@ function logMessage({ direction, jid, name, text, timestamp }) {
 /** store.js isko optional call karta hai — alias rakha taake crash na ho. */
 const enqueueMessage = logMessage;
 
+/* ---------- WhatsApp session backup/restore (Free-plan, no persistent disk workaround) ---------- */
+// Google Sheet cell limit ~50,000 chars — margin ke sath chunk karte hain.
+async function saveSessionChunks(chunks) {
+  return callScript('save_session', { chunks }, 40000);
+}
+async function loadSessionChunks() {
+  const res = await callScript('load_session', {}, 40000);
+  return (res.data && res.data.chunks) || [];
+}
+async function clearSessionRemote() {
+  try { await callScript('clear_session', {}, 15000); } catch (_) { /* best-effort */ }
+}
+
 /* ---------- Immediate (awaited) calls — restore / force-sync ke liye ---------- */
 
 async function pullAll() {
@@ -223,6 +236,9 @@ module.exports = {
   logEvent,
   logMessage,
   enqueueMessage,
+  saveSessionChunks,
+  loadSessionChunks,
+  clearSessionRemote,
   flushTimeout,
   SYNC_ENABLED,
   WEBAPP_URL,
